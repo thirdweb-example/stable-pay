@@ -1,4 +1,4 @@
-# 💰 Crypto Venmo Clone
+# 💰 Crypto Venmo Example
 
 A peer-to-peer crypto payment application built with React, thirdweb API, and Supabase. Send and receive stablecoins (USDC/USDT) to other users by username with a Venmo-like interface.
 
