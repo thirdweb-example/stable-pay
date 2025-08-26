@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { ArrowLeft, Send, CheckCircle, AlertCircle, ExternalLink } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { createPayment, completePayment, getTransactionStatus, isInsufficientFundsResponse } from '../../utils/thirdwebAPI';
-import { createTransaction, updateTransactionStatus } from '../../utils/supabase';
+import { createTransaction, updateTransactionStatus, updateThirdwebTransactionId } from '../../utils/supabase';
 import { CHAINS } from '../../utils/contracts';
 import { type PaymentData } from './SendPayment';
 
@@ -91,7 +91,20 @@ const PaymentConfirm: React.FC<PaymentConfirmProps> = ({ paymentData, onBack, on
       // Normal successful payment
       if ('result' in result && 'transactionId' in result.result) {
         console.log('Payment successful, transaction ID:', result.result.transactionId);
-        // Update Supabase with thirdweb transaction ID
+        
+        // Save the thirdweb transaction ID to Supabase
+        try {
+          await updateThirdwebTransactionId(
+            supabaseTransaction.id,
+            result.result.transactionId
+          );
+          console.log('Thirdweb transaction ID saved to Supabase');
+        } catch (updateError) {
+          console.error('Failed to save thirdweb transaction ID:', updateError);
+          // Continue with the payment flow even if this fails
+        }
+        
+        // Update Supabase transaction status to pending
         try {
           await updateTransactionStatus(
             supabaseTransaction.id,
@@ -147,8 +160,19 @@ const PaymentConfirm: React.FC<PaymentConfirmProps> = ({ paymentData, onBack, on
             setShowInsufficientFunds(false);
             setPaymentLink('');
             
-            // Update Supabase and monitor transaction
+            // Save the thirdweb transaction ID to Supabase
             if (transactionId) {
+              try {
+                await updateThirdwebTransactionId(
+                  transactionId,
+                  result.result.transactionId
+                );
+                console.log('Thirdweb transaction ID saved to Supabase via payment link');
+              } catch (updateError) {
+                console.error('Failed to save thirdweb transaction ID via payment link:', updateError);
+              }
+              
+              // Update Supabase transaction status to pending
               await updateTransactionStatus(transactionId, 'pending', undefined);
               setStatus('monitoring');
               await monitorTransaction(result.result.transactionId, transactionId);

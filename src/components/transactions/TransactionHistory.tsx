@@ -1,14 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { ArrowUpRight, ArrowDownLeft, Clock, CheckCircle, XCircle, ExternalLink, RefreshCw } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
-import { getUserTransactions, subscribeToUserTransactions, type Transaction } from '../../utils/supabase';
+import { getUserTransactions, subscribeToUserTransactions, updateTransactionStatus, type Transaction } from '../../utils/supabase';
 import { CHAINS, formatTokenAmount } from '../../utils/contracts';
+import { refreshPendingTransactionStatuses } from '../../utils/thirdwebAPI';
 
 const TransactionHistory: React.FC = () => {
   const { user } = useAuth();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -44,21 +46,83 @@ const TransactionHistory: React.FC = () => {
       });
     });
 
+    // Set up automatic refresh for pending transactions every 2 minutes
+    const autoRefreshInterval = setInterval(async () => {
+      // Get current transactions from state at the time of the interval
+      setTransactions(currentTransactions => {
+        // Only refresh transactions that are still pending (exclude confirmed/failed final statuses)
+        const pendingTransactions = currentTransactions.filter(tx => tx.status === 'pending');
+        if (pendingTransactions.length > 0) {
+          // Use a separate async function to avoid blocking the state update
+          (async () => {
+            try {
+              await refreshPendingTransactionStatuses(
+                pendingTransactions,
+                async (supabaseTransactionId, status, transactionHash) => {
+                  try {
+                    await updateTransactionStatus(supabaseTransactionId, status, transactionHash);
+                    // Update local state
+                    setTransactions(prev => prev.map(tx => 
+                      tx.id === supabaseTransactionId 
+                        ? { ...tx, status, transaction_hash: transactionHash }
+                        : tx
+                    ));
+                  } catch (error) {
+                    console.error(`Failed to update transaction ${supabaseTransactionId}:`, error);
+                  }
+                }
+              );
+            } catch (error) {
+              console.error('Auto-refresh failed:', error);
+            }
+          })();
+        }
+        return currentTransactions; // Return unchanged state
+      });
+    }, 30000); // 2 minutes
+
     return () => {
       subscription.unsubscribe();
+      clearInterval(autoRefreshInterval);
     };
-  }, [user?.id]);
+  }, [user?.id]); // Remove transactions from dependency array
 
   const handleRefresh = async () => {
     if (!user?.id) return;
     
     try {
+      setIsRefreshing(true);
+      
+            // First, refresh pending transaction statuses from thirdweb API (exclude confirmed/failed final statuses)
+      const pendingTransactions = transactions.filter(tx => tx.status === 'pending');
+      if (pendingTransactions.length > 0) {
+        await refreshPendingTransactionStatuses(
+          pendingTransactions,
+          async (supabaseTransactionId, status, transactionHash) => {
+            try {
+              await updateTransactionStatus(supabaseTransactionId, status, transactionHash);
+              // Update local state
+              setTransactions(prev => prev.map(tx => 
+                tx.id === supabaseTransactionId 
+                  ? { ...tx, status, transaction_hash: transactionHash }
+                  : tx
+              ));
+            } catch (error) {
+              console.error(`Failed to update transaction ${supabaseTransactionId}:`, error);
+            }
+          }
+        );
+      }
+      
+      // Then refresh the full transaction list from Supabase
       const userTransactions = await getUserTransactions(user.id);
       setTransactions(userTransactions);
       setError('');
     } catch (error) {
       console.error('Failed to refresh transactions:', error);
       setError('Failed to refresh transactions');
+    } finally {
+      setIsRefreshing(false);
     }
   };
 
@@ -200,9 +264,10 @@ const TransactionHistory: React.FC = () => {
         <h2 className="text-lg font-semibold text-gray-900">Recent Activity</h2>
         <button
           onClick={handleRefresh}
-          className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+          disabled={isRefreshing}
+          className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          <RefreshCw className="h-4 w-4" />
+          <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
         </button>
       </div>
 

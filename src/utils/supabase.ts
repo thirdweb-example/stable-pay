@@ -233,6 +233,31 @@ export const updateTransactionStatus = async (
   return data;
 };
 
+export const updateThirdwebTransactionId = async (
+  transactionId: string,
+  thirdwebTransactionId: string
+): Promise<Transaction> => {
+  const { data, error } = await supabase
+    .from('transactions')
+    .update({
+      thirdweb_transaction_id: thirdwebTransactionId,
+      updated_at: new Date().toISOString()
+    })
+    .eq('id', transactionId)
+    .select(`
+      *,
+      from_user:users!from_user_id(*),
+      to_user:users!to_user_id(*)
+    `)
+    .single();
+
+  if (error) {
+    throw new Error(`Failed to update thirdweb transaction ID: ${error.message}`);
+  }
+
+  return data;
+};
+
 export const getUserTransactions = async (userId: string): Promise<Transaction[]> => {
   const { data, error } = await supabase
     .from('transactions')

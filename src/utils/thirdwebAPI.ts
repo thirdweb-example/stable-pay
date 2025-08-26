@@ -73,6 +73,23 @@ interface TransactionStatusResponse {
   };
 }
 
+// Status mapping from thirdweb API to our internal statuses
+export const mapThirdwebStatusToInternal = (thirdwebStatus: string | null): 'pending' | 'confirmed' | 'failed' => {
+  if (!thirdwebStatus) return 'pending';
+  
+  switch (thirdwebStatus.toUpperCase()) {
+    case 'QUEUED':
+    case 'SUBMITTED':
+      return 'pending';
+    case 'CONFIRMED':
+      return 'confirmed';
+    case 'FAILED':
+      return 'failed';
+    default:
+      return 'pending';
+  }
+};
+
 // Authentication Functions
 export const sendLoginCode = async (email: string) => {
   const response = await fetch(`${THIRDWEB_API_BASE}/auth/initiate`, {
@@ -159,6 +176,14 @@ export const createPayment = async (
   chainId: number,
   userToken: string
 ): Promise<{id: string; link: string}> => {
+  console.log('Creating payment for:', {
+    name,
+    description,
+    recipient,
+    tokenAddress,
+    amount,
+    chainId
+  });
   const response = await fetch(`${THIRDWEB_API_BASE}/payments`, {
     method: 'POST',
     headers: {
@@ -177,6 +202,8 @@ export const createPayment = async (
       }
     })
   });
+
+  console.log('create payment response:', response);
   
   if (!response.ok) {
     const errorText = await response.text();
@@ -185,6 +212,7 @@ export const createPayment = async (
   }
   
   const data = await response.json();
+  console.log('create payment data:', data);
   
   // Extract the result from the API response structure
   if (data.result && data.result.id) {
@@ -202,6 +230,10 @@ export const completePayment = async (
   fromAddress: string,
   userToken: string
 ): Promise<TransactionResponse | InsufficientFundsResponse> => {
+  console.log('Completing payment for:', {
+    paymentId,
+    fromAddress
+  });
   const response = await fetch(`${THIRDWEB_API_BASE}/payments/${paymentId}`, {
     method: 'POST',
     headers: {
@@ -291,6 +323,33 @@ export const getTransactionStatus = async (transactionId: string): Promise<Trans
   }
   
   return response.json();
+};
+
+// Refresh transaction statuses for pending transactions only
+// Note: confirmed and failed are final statuses that don't need refreshing
+export const refreshPendingTransactionStatuses = async (
+  pendingTransactions: Array<{ id: string; thirdweb_transaction_id?: string }>,
+  updateCallback: (transactionId: string, status: 'pending' | 'confirmed' | 'failed', transactionHash?: string) => Promise<void>
+): Promise<void> => {
+  const refreshPromises = pendingTransactions
+    .filter(tx => tx.thirdweb_transaction_id) // Only refresh transactions with thirdweb IDs
+    .map(async (tx) => {
+      try {
+        const statusResult = await getTransactionStatus(tx.thirdweb_transaction_id!);
+        const internalStatus = mapThirdwebStatusToInternal(statusResult.result?.status);
+        const transactionHash = statusResult.result?.transactionHash;
+        
+        // Only update if status has changed from pending to a final status
+        if (internalStatus !== 'pending') {
+          await updateCallback(tx.id, internalStatus, transactionHash);
+        }
+      } catch (error) {
+        console.error(`Failed to refresh status for transaction ${tx.id}:`, error);
+        // Continue with other transactions even if one fails
+      }
+    });
+
+  await Promise.allSettled(refreshPromises);
 };
 
 export const getWalletTransactions = async (address: string, chainId: number, limit = 20) => {
