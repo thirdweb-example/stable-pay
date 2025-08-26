@@ -22,6 +22,32 @@ export interface BalanceResponse {
   };
 }
 
+export interface CreatePaymentResponse {
+  result: {
+    id: string;
+    link: string;
+  };
+}
+
+export interface CompletePaymentResponse {
+  result: {
+    transactionId: string;
+    status: string;
+  };
+}
+
+export interface InsufficientFundsResponse {
+  result: {
+    link: string;
+    rawQuote: unknown;
+  };
+}
+
+// Type guard function to check if response is insufficient funds
+export const isInsufficientFundsResponse = (response: TransactionResponse | InsufficientFundsResponse): response is InsufficientFundsResponse => {
+  return 'result' in response && 'link' in response.result && !('transactionId' in response.result);
+}
+
 export interface TransactionResponse {
   result: {
     transactionId: string;
@@ -158,14 +184,24 @@ export const createPayment = async (
     throw new Error(`Failed to create payment: ${response.status} ${response.statusText}`);
   }
   
-  return response.json();
+  const data = await response.json();
+  
+  // Extract the result from the API response structure
+  if (data.result && data.result.id) {
+    return {
+      id: data.result.id,
+      link: data.result.link
+    };
+  }
+  
+  throw new Error('Invalid payment response format from thirdweb API');
 };
 
 export const completePayment = async (
   paymentId: string,
   fromAddress: string,
   userToken: string
-): Promise<TransactionResponse> => {
+): Promise<TransactionResponse | InsufficientFundsResponse> => {
   const response = await fetch(`${THIRDWEB_API_BASE}/payments/${paymentId}`, {
     method: 'POST',
     headers: {
@@ -177,6 +213,17 @@ export const completePayment = async (
       from: fromAddress
     })
   });
+
+  console.log('Complete payment response:', response.status);
+  
+  if (response.status === 402) {
+    // Insufficient funds - return the payment link for user to add funds
+    const data = await response.json();
+    console.log('Insufficient funds, payment link available:', data);
+    console.log('Response status:', response.status);
+    console.log('Response data:', data);
+    return data as InsufficientFundsResponse;
+  }
   
   if (!response.ok) {
     const errorText = await response.text();

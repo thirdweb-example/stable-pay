@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { ArrowLeft, Send, CheckCircle, AlertCircle, ExternalLink } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
-import { createPayment, completePayment, getTransactionStatus } from '../../utils/thirdwebAPI';
+import { createPayment, completePayment, getTransactionStatus, isInsufficientFundsResponse } from '../../utils/thirdwebAPI';
 import { createTransaction, updateTransactionStatus } from '../../utils/supabase';
 import { CHAINS } from '../../utils/contracts';
 import { type PaymentData } from './SendPayment';
@@ -20,6 +20,9 @@ const PaymentConfirm: React.FC<PaymentConfirmProps> = ({ paymentData, onBack, on
   const [error, setError] = useState('');
   const [transactionHash, setTransactionHash] = useState('');
   const [transactionId, setTransactionId] = useState('');
+  const [paymentLink, setPaymentLink] = useState<string>('');
+  const [showInsufficientFunds, setShowInsufficientFunds] = useState(false);
+  const [currentPaymentId, setCurrentPaymentId] = useState<string>('');
 
   const { recipient, token: selectedToken, amount, amountWei, message } = paymentData;
   const chainName = CHAINS.find(c => c.id === selectedToken.chainId)?.name || `Chain ${selectedToken.chainId}`;
@@ -60,6 +63,10 @@ const PaymentConfirm: React.FC<PaymentConfirmProps> = ({ paymentData, onBack, on
         token
       );
 
+      // Save the payment link for potential insufficient funds case
+      setPaymentLink(payment.link);
+      setCurrentPaymentId(payment.id);
+
       // Complete the payment
       const result = await completePayment(
         payment.id,
@@ -67,18 +74,41 @@ const PaymentConfirm: React.FC<PaymentConfirmProps> = ({ paymentData, onBack, on
         token
       );
 
-      if (result.result?.transactionId) {
+      console.log('Complete payment result:', result);
+      console.log('Result type:', typeof result);
+      console.log('Has result property:', 'result' in result);
+      console.log('Result result:', result.result);
+
+      // Check if this is an insufficient funds response (402)
+      if (isInsufficientFundsResponse(result)) {
+        console.log('Insufficient funds detected, showing payment link');
+        // Insufficient funds - show payment link (already saved from createPayment)
+        setShowInsufficientFunds(true);
+        setStatus('confirming');
+        return;
+      }
+
+      // Normal successful payment
+      if ('result' in result && 'transactionId' in result.result) {
+        console.log('Payment successful, transaction ID:', result.result.transactionId);
         // Update Supabase with thirdweb transaction ID
-        await updateTransactionStatus(
-          supabaseTransaction.id,
-          'pending',
-          undefined
-        );
+        try {
+          await updateTransactionStatus(
+            supabaseTransaction.id,
+            'pending',
+            undefined
+          );
+          console.log('Supabase transaction status updated successfully');
+        } catch (updateError) {
+          console.error('Failed to update Supabase transaction status:', updateError);
+          // Continue with the payment flow even if Supabase update fails
+        }
 
         // Monitor transaction status
         setStatus('monitoring');
         await monitorTransaction(result.result.transactionId, supabaseTransaction.id);
       } else {
+        console.log('Unexpected response format:', result);
         throw new Error('Failed to get transaction ID from thirdweb');
       }
     } catch (error: unknown) {
@@ -94,6 +124,45 @@ const PaymentConfirm: React.FC<PaymentConfirmProps> = ({ paymentData, onBack, on
           console.error('Failed to update transaction status:', updateError);
         }
       }
+    }
+  };
+
+  const openPaymentLink = () => {
+    if (paymentLink) {
+      // Open payment link in new window
+      window.open(paymentLink, '_blank', 'width=800,height=600');
+      
+      // Set up polling to check if payment was completed
+      const checkPaymentStatus = async () => {
+        try {
+          // Try to complete the payment again
+          const result = await completePayment(
+            currentPaymentId,
+            user!.wallet_address,
+            token!
+          );
+          
+          if ('result' in result && 'transactionId' in result.result) {
+            // Payment completed successfully
+            setShowInsufficientFunds(false);
+            setPaymentLink('');
+            
+            // Update Supabase and monitor transaction
+            if (transactionId) {
+              await updateTransactionStatus(transactionId, 'pending', undefined);
+              setStatus('monitoring');
+              await monitorTransaction(result.result.transactionId, transactionId);
+            }
+          }
+        } catch (error) {
+          console.error('Payment still not completed:', error);
+          // Continue polling
+          setTimeout(checkPaymentStatus, 5000); // Check every 5 seconds
+        }
+      };
+      
+      // Start checking after a delay to allow user to complete payment
+      setTimeout(checkPaymentStatus, 10000); // Start checking after 10 seconds
     }
   };
 
@@ -148,6 +217,10 @@ const PaymentConfirm: React.FC<PaymentConfirmProps> = ({ paymentData, onBack, on
   };
 
   const getStatusIcon = () => {
+    if (showInsufficientFunds) {
+      return <AlertCircle className="h-8 w-8 text-blue-500" />;
+    }
+    
     switch (status) {
       case 'confirming':
         return <Send className="h-8 w-8 text-blue-500" />;
@@ -162,6 +235,10 @@ const PaymentConfirm: React.FC<PaymentConfirmProps> = ({ paymentData, onBack, on
   };
 
   const getStatusMessage = () => {
+    if (showInsufficientFunds) {
+      return 'Add funds to complete payment';
+    }
+    
     switch (status) {
       case 'confirming':
         return 'Review your payment details';
@@ -192,9 +269,16 @@ const PaymentConfirm: React.FC<PaymentConfirmProps> = ({ paymentData, onBack, on
     <div className="p-4 space-y-6">
       {/* Header */}
       <div className="flex items-center space-x-4">
-        {status === 'confirming' && (
+        {(status === 'confirming' || showInsufficientFunds) && (
           <button
-            onClick={onBack}
+            onClick={() => {
+              if (showInsufficientFunds) {
+                setShowInsufficientFunds(false);
+                setPaymentLink('');
+                setCurrentPaymentId('');
+              }
+              onBack();
+            }}
             className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
           >
             <ArrowLeft className="h-5 w-5 text-gray-600" />
@@ -283,6 +367,28 @@ const PaymentConfirm: React.FC<PaymentConfirmProps> = ({ paymentData, onBack, on
         </div>
       )}
 
+      {/* Insufficient Funds Message */}
+      {showInsufficientFunds && paymentLink && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <div className="flex items-start space-x-3">
+            <AlertCircle className="h-5 w-5 text-blue-500 flex-shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="text-blue-600 text-sm font-medium">Insufficient Funds</p>
+              <p className="text-blue-600 text-sm mt-1">
+                You need to add funds to complete this payment. Click the button below to open the payment page.
+              </p>
+              <button
+                onClick={openPaymentLink}
+                className="inline-flex items-center text-blue-600 text-sm mt-2 hover:underline font-medium"
+              >
+                <ExternalLink className="h-3 w-3 mr-1" />
+                Open Payment Page
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Transaction Hash */}
       {transactionHash && (
         <div className="bg-green-50 border border-green-200 rounded-lg p-4">
@@ -309,7 +415,7 @@ const PaymentConfirm: React.FC<PaymentConfirmProps> = ({ paymentData, onBack, on
 
       {/* Action Buttons */}
       <div className="space-y-3">
-        {status === 'confirming' && (
+        {status === 'confirming' && !showInsufficientFunds && (
           <button
             onClick={executePayment}
             className="venmo-button w-full flex items-center justify-center"
@@ -317,6 +423,28 @@ const PaymentConfirm: React.FC<PaymentConfirmProps> = ({ paymentData, onBack, on
             <Send className="h-4 w-4 mr-2" />
             Send Payment
           </button>
+        )}
+
+        {status === 'confirming' && showInsufficientFunds && (
+          <div className="space-y-3">
+            <button
+              onClick={openPaymentLink}
+              className="venmo-button w-full flex items-center justify-center"
+            >
+              <ExternalLink className="h-4 w-4 mr-2" />
+              Open Payment Page
+            </button>
+            <button
+              onClick={() => {
+                setShowInsufficientFunds(false);
+                setPaymentLink('');
+                setCurrentPaymentId('');
+              }}
+              className="w-full py-3 px-4 border border-gray-300 rounded-xl text-gray-700 font-medium hover:bg-gray-50 transition-colors"
+            >
+              Try Again
+            </button>
+          </div>
         )}
 
         {status === 'success' && (
@@ -350,7 +478,12 @@ const PaymentConfirm: React.FC<PaymentConfirmProps> = ({ paymentData, onBack, on
               Try Again
             </button>
             <button
-              onClick={onBack}
+              onClick={() => {
+                setShowInsufficientFunds(false);
+                setPaymentLink('');
+                setCurrentPaymentId('');
+                onBack();
+              }}
               className="w-full py-3 px-4 border border-gray-300 rounded-xl text-gray-700 font-medium hover:bg-gray-50 transition-colors"
             >
               Back to Payment
