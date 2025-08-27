@@ -43,6 +43,50 @@ export interface InsufficientFundsResponse {
   };
 }
 
+// Payment status response from GET /payments/{id}
+export interface PaymentStatusResponse {
+  data: Array<{
+    id: string;
+    blockNumber: string;
+    transactionId: string;
+    clientId: string;
+    sender: string;
+    receiver: string;
+    developerFeeRecipient: string;
+    developerFeeBps: number;
+    transactions: Array<{
+      chainId: number;
+      transactionHash: string;
+    }>;
+    status: 'PENDING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
+    type: string;
+    originAmount: string;
+    destinationAmount: string;
+    paymentLinkId: string;
+    purchaseData: unknown;
+    originToken: {
+      chainId: number;
+      address: string;
+      symbol: string;
+      name: string;
+      decimals: number;
+      iconUri: string;
+    };
+    destinationToken: {
+      chainId: number;
+      address: string;
+      symbol: string;
+      name: string;
+      decimals: number;
+      iconUri: string;
+    };
+    createdAt: string;
+  }>;
+  meta: {
+    totalCount: number;
+  };
+}
+
 // Type guard function to check if response is insufficient funds
 export const isInsufficientFundsResponse = (response: TransactionResponse | InsufficientFundsResponse): response is InsufficientFundsResponse => {
   return 'result' in response && 'link' in response.result && !('transactionId' in response.result);
@@ -147,9 +191,14 @@ export const verifyLoginCode = async (email: string, code: string): Promise<Auth
 export const getWalletBalance = async (address: string, chainId: number, tokenAddress?: string): Promise<BalanceResponse> => {
   const url = new URL(`${THIRDWEB_API_BASE}/wallets/${address}/balance`);
   url.searchParams.append('chainId', chainId.toString());
-  if (tokenAddress) {
+  
+  // If tokenAddress is provided, add it as a query parameter
+  // If not provided, it will fetch native token balance
+  if (tokenAddress && tokenAddress !== '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE') {
     url.searchParams.append('tokenAddress', tokenAddress);
   }
+  
+  console.log('Fetching balance for:', { address, chainId, tokenAddress, url: url.toString() });
   
   const response = await fetch(url.toString(), {
     headers: {
@@ -163,7 +212,36 @@ export const getWalletBalance = async (address: string, chainId: number, tokenAd
     throw new Error(`Failed to get wallet balance: ${response.status} ${response.statusText}`);
   }
   
-  return response.json();
+  const data = await response.json();
+  console.log('Balance response:', data);
+  
+  return data;
+};
+
+// Get native token balance (ETH, MATIC, etc.)
+export const getNativeTokenBalance = async (address: string, chainId: number): Promise<BalanceResponse> => {
+  const url = new URL(`${THIRDWEB_API_BASE}/wallets/${address}/balance`);
+  url.searchParams.append('chainId', chainId.toString());
+  // Don't add tokenAddress for native token balance
+  
+  console.log('Fetching native token balance for:', { address, chainId, url: url.toString() });
+  
+  const response = await fetch(url.toString(), {
+    headers: {
+      'x-client-id': CLIENT_ID
+    }
+  });
+  
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error('Native balance error response:', errorText);
+    throw new Error(`Failed to get native token balance: ${response.status} ${response.statusText}`);
+  }
+  
+  const data = await response.json();
+  console.log('Native balance response:', data);
+  
+  return data;
 };
 
 // Payment Functions
@@ -261,6 +339,33 @@ export const completePayment = async (
     const errorText = await response.text();
     console.error('Complete payment error response:', errorText);
     throw new Error(`Failed to complete payment: ${response.status} ${response.statusText}`);
+  }
+  
+  return response.json();
+};
+
+// Get payment status without completing it
+export const getPaymentStatus = async (
+  paymentId: string,
+  userToken: string
+): Promise<PaymentStatusResponse> => {
+  console.log('Getting payment status for:', paymentId);
+  
+  const response = await fetch(`${THIRDWEB_API_BASE}/payments/${paymentId}`, {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-client-id': CLIENT_ID,
+      'Authorization': `Bearer ${userToken}`
+    }
+  });
+
+  console.log('Get payment status response:', response.status);
+  
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error('Get payment status error response:', errorText);
+    throw new Error(`Failed to get payment status: ${response.status} ${response.statusText}`);
   }
   
   return response.json();

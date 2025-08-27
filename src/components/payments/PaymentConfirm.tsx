@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
-import { ArrowLeft, Send, CheckCircle, AlertCircle, ExternalLink } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { ArrowLeft, Send, CheckCircle, AlertCircle, ExternalLink, XCircle } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
-import { createPayment, completePayment, getTransactionStatus, isInsufficientFundsResponse } from '../../utils/thirdwebAPI';
+import { createPayment, completePayment, getPaymentStatus, getTransactionStatus, isInsufficientFundsResponse, mapThirdwebStatusToInternal } from '../../utils/thirdwebAPI';
 import { createTransaction, updateTransactionStatus, updateThirdwebTransactionId } from '../../utils/supabase';
 import { CHAINS } from '../../utils/contracts';
 import { type PaymentData } from './SendPayment';
@@ -23,6 +23,17 @@ const PaymentConfirm: React.FC<PaymentConfirmProps> = ({ paymentData, onBack, on
   const [paymentLink, setPaymentLink] = useState<string>('');
   const [showInsufficientFunds, setShowInsufficientFunds] = useState(false);
   const [currentPaymentId, setCurrentPaymentId] = useState<string>('');
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [paymentMonitoringInterval, setPaymentMonitoringInterval] = useState<NodeJS.Timeout | null>(null);
+
+  // Cleanup monitoring interval on unmount
+  useEffect(() => {
+    return () => {
+      if (paymentMonitoringInterval) {
+        clearInterval(paymentMonitoringInterval);
+      }
+    };
+  }, [paymentMonitoringInterval]);
 
   const { recipient, token: selectedToken, amount, amountWei, message } = paymentData;
   const chainName = CHAINS.find(c => c.id === selectedToken.chainId)?.name || `Chain ${selectedToken.chainId}`;
@@ -140,10 +151,136 @@ const PaymentConfirm: React.FC<PaymentConfirmProps> = ({ paymentData, onBack, on
     }
   };
 
+  const checkPaymentStatusOnClose = async () => {
+    if (!currentPaymentId || !token) return;
+    
+    try {
+      console.log('Checking payment status on modal close for payment:', currentPaymentId);
+      
+      // Get payment status without completing it
+      const paymentStatus = await getPaymentStatus(currentPaymentId, token);
+      
+      if (paymentStatus.data && paymentStatus.data.length > 0) {
+        const payment = paymentStatus.data[0];
+        console.log('Payment status:', payment.status);
+        
+        if (payment.status === 'COMPLETED' && payment.transactionId) {
+          // Payment was completed successfully
+          console.log('Payment completed successfully on modal close');
+          setShowInsufficientFunds(false);
+          setPaymentLink('');
+          
+          // Save the thirdweb transaction ID to Supabase
+          if (transactionId) {
+            try {
+              await updateThirdwebTransactionId(
+                transactionId,
+                payment.transactionId
+              );
+              console.log('Thirdweb transaction ID saved to Supabase on modal close');
+            } catch (updateError) {
+              console.error('Failed to save thirdweb transaction ID on modal close:', updateError);
+            }
+            
+            // Update Supabase transaction status to pending
+            await updateTransactionStatus(transactionId, 'pending', undefined);
+            setStatus('monitoring');
+            await monitorTransaction(payment.transactionId, transactionId);
+          }
+        } else if (payment.status === 'PENDING') {
+          // Payment is still pending - user didn't complete it
+          console.log('Payment still pending - user cancelled');
+          handlePaymentCancellation();
+        } else {
+          // Payment failed or was cancelled
+          console.log('Payment failed or cancelled:', payment.status);
+          handlePaymentCancellation();
+        }
+      } else {
+        // No payment data returned - payment doesn't exist or was cancelled
+        console.log('No payment data returned - payment cancelled');
+        handlePaymentCancellation();
+      }
+    } catch (error) {
+      console.error('Failed to check payment status on modal close:', error);
+      // If we can't check the status, assume payment was cancelled
+      handlePaymentCancellation();
+    }
+  };
+
+  const startPaymentMonitoring = () => {
+    if (!currentPaymentId || !token) return;
+    
+    console.log('Starting payment monitoring for:', currentPaymentId);
+    
+    // Set up monitoring interval to check payment status
+    const monitoringInterval = setInterval(async () => {
+      try {
+        const paymentStatus = await getPaymentStatus(currentPaymentId, token);
+        
+        if (paymentStatus.data && paymentStatus.data.length > 0) {
+          const payment = paymentStatus.data[0];
+          
+          if (payment.status === 'COMPLETED' && payment.transactionId) {
+            // Payment completed successfully
+            console.log('Payment completed during monitoring');
+            clearInterval(monitoringInterval);
+            
+            setShowInsufficientFunds(false);
+            setPaymentLink('');
+            setShowPaymentModal(false);
+            
+            // Save the thirdweb transaction ID to Supabase
+            if (transactionId) {
+              try {
+                await updateThirdwebTransactionId(
+                  transactionId,
+                  payment.transactionId
+                );
+                console.log('Thirdweb transaction ID saved to Supabase during monitoring');
+              } catch (updateError) {
+                console.error('Failed to save thirdweb transaction ID during monitoring:', updateError);
+              }
+              
+              // Update Supabase transaction status to pending
+              await updateTransactionStatus(transactionId, 'pending', undefined);
+              setStatus('monitoring');
+              await monitorTransaction(payment.transactionId, transactionId);
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Payment monitoring error:', error);
+        // Continue monitoring even if there's an error
+      }
+    }, 5000); // Check every 5 seconds
+    
+    // Store the interval ID so we can clear it if needed
+    setPaymentMonitoringInterval(monitoringInterval);
+  };
+
+  const handlePaymentCancellation = () => {
+    // Clear any active monitoring
+    if (paymentMonitoringInterval) {
+      clearInterval(paymentMonitoringInterval);
+      setPaymentMonitoringInterval(null);
+    }
+    
+    // Reset all payment-related state
+    setShowInsufficientFunds(false);
+    setPaymentLink('');
+    setCurrentPaymentId('');
+    setStatus('confirming');
+    setError('');
+    
+    // Route back to home page
+    window.location.href = '/';
+  };
+
   const openPaymentLink = () => {
     if (paymentLink) {
-      // Open payment link in new window
-      window.open(paymentLink, '_blank', 'width=800,height=600');
+      // Open payment link in modal dialog
+      setShowPaymentModal(true);
       
       // Set up polling to check if payment was completed
       const checkPaymentStatus = async () => {
@@ -159,6 +296,7 @@ const PaymentConfirm: React.FC<PaymentConfirmProps> = ({ paymentData, onBack, on
             // Payment completed successfully
             setShowInsufficientFunds(false);
             setPaymentLink('');
+            setShowPaymentModal(false);
             
             // Save the thirdweb transaction ID to Supabase
             if (transactionId) {
@@ -198,7 +336,10 @@ const PaymentConfirm: React.FC<PaymentConfirmProps> = ({ paymentData, onBack, on
       try {
         const statusResult = await getTransactionStatus(thirdwebTransactionId);
         
-        if (statusResult.result?.status === 'mined' || statusResult.result?.status === 'confirmed') {
+        // Use the status mapping function to get the internal status
+        const internalStatus = mapThirdwebStatusToInternal(statusResult.result?.status);
+        
+        if (internalStatus === 'confirmed') {
           // Transaction successful
           setTransactionHash(statusResult.result.transactionHash || '');
           await updateTransactionStatus(
@@ -208,7 +349,7 @@ const PaymentConfirm: React.FC<PaymentConfirmProps> = ({ paymentData, onBack, on
           );
           setStatus('success');
           return;
-        } else if (statusResult.result?.status === 'failed') {
+        } else if (internalStatus === 'failed') {
           // Transaction failed
           await updateTransactionStatus(supabaseTransactionId, 'failed');
           setError('Transaction failed on the blockchain');
@@ -468,6 +609,12 @@ const PaymentConfirm: React.FC<PaymentConfirmProps> = ({ paymentData, onBack, on
             >
               Try Again
             </button>
+            <button
+              onClick={handlePaymentCancellation}
+              className="w-full py-3 px-4 border border-red-300 rounded-xl text-red-700 font-medium hover:bg-red-50 transition-colors"
+            >
+              Cancel Payment
+            </button>
           </div>
         )}
 
@@ -515,6 +662,94 @@ const PaymentConfirm: React.FC<PaymentConfirmProps> = ({ paymentData, onBack, on
           </div>
         )}
       </div>
+
+      {/* Payment Modal */}
+      {showPaymentModal && paymentLink && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 max-w-lg w-full mx-4">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-xl font-semibold text-gray-900">Complete Payment</h3>
+              <button
+                onClick={async () => {
+                  await checkPaymentStatusOnClose();
+                  setShowPaymentModal(false);
+                }}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <XCircle className="h-6 w-6" />
+              </button>
+            </div>
+            
+            <div className="space-y-6">
+              {/* Payment Instructions */}
+              <div className="text-center">
+                <div className="w-20 h-20 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <ExternalLink className="h-10 w-10 text-blue-600" />
+                </div>
+                <h3 className="text-xl font-medium text-gray-900 mb-3">Add Funds to Complete Payment</h3>
+                <p className="text-gray-600 text-sm leading-relaxed">
+                  You need to add funds to complete this payment. Click the button below to open the payment page in a new tab.
+                </p>
+              </div>
+              
+              {/* Status Indicator */}
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                <div className="flex items-center space-x-3">
+                  <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                  <div className="text-sm text-gray-700">
+                    <p className="font-medium">Monitoring payment status...</p>
+                    <p className="text-xs text-gray-500">This modal will close automatically when payment completes</p>
+                  </div>
+                </div>
+              </div>
+              
+              {/* Instructions Box */}
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <div className="flex items-start space-x-3">
+                  <div className="flex-shrink-0">
+                    <div className="w-6 h-6 bg-blue-100 rounded-full flex items-center justify-center">
+                      <span className="text-blue-600 text-sm font-medium">i</span>
+                    </div>
+                  </div>
+                  <div className="text-sm text-blue-700">
+                    <p className="font-medium mb-2">How to complete your payment:</p>
+                    <ol className="space-y-1 text-xs">
+                      <li>1. Click "Open Payment Page" below</li>
+                      <li>2. Complete the payment in the new tab</li>
+                      <li>3. Return here - the modal will close automatically</li>
+                      <li>4. Or close manually if you need to cancel</li>
+                    </ol>
+                  </div>
+                </div>
+              </div>
+              
+              {/* Action Buttons */}
+              <div className="flex space-x-3">
+                <button
+                  onClick={async () => {
+                    await checkPaymentStatusOnClose();
+                    setShowPaymentModal(false);
+                  }}
+                  className="flex-1 py-3 px-4 border border-gray-300 rounded-lg text-gray-700 font-medium hover:bg-gray-50 transition-colors"
+                >
+                  Close & Check Status
+                </button>
+                <button
+                  onClick={() => {
+                    window.open(paymentLink, '_blank');
+                    // Start monitoring for payment completion
+                    startPaymentMonitoring();
+                  }}
+                  className="flex-1 py-3 px-4 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors flex items-center justify-center"
+                >
+                  <ExternalLink className="h-4 w-4 mr-2" />
+                  Open Payment Page
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

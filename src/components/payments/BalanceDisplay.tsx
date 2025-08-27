@@ -30,19 +30,32 @@ const BalanceDisplay: React.FC = () => {
     try {
       const balancePromises: Promise<Balance>[] = [];
 
+      // Prioritize Base USDC first, then other tokens
+      const sortedChains = [...CHAINS].sort((a, b) => {
+        // Put Base first
+        if (a.id === 8453) return -1;
+        if (b.id === 8453) return 1;
+        return 0;
+      });
+
       // Fetch balances for all tokens across all chains
-      CHAINS.forEach(chain => {
+      sortedChains.forEach(chain => {
         chain.tokens.forEach(token => {
           const promise = getWalletBalance(
             user.wallet_address,
             token.chainId,
             token.address
-          ).then(response => ({
-            token,
-            balance: response.result?.value || '0',
-            formattedBalance: formatTokenAmount(response.result?.value || '0', token.decimals),
-            usdValue: undefined // We could add price API integration here
-          })).catch(error => {
+          ).then(response => {
+            // Handle array result from getWalletBalance
+            const balanceData = Array.isArray(response.result) ? response.result[0] : response.result;
+            
+            return {
+              token,
+              balance: balanceData?.value || '0',
+              formattedBalance: formatTokenAmount(balanceData?.value || '0', token.decimals),
+              usdValue: undefined // We could add price API integration here
+            };
+          }).catch(error => {
             console.error(`Failed to fetch ${token.symbol} balance on ${chain.name}:`, error);
             return {
               token,
@@ -58,16 +71,30 @@ const BalanceDisplay: React.FC = () => {
 
       const results = await Promise.all(balancePromises);
       
-      // Filter out zero balances for cleaner display, but keep at least one USDC
-      const nonZeroBalances = results.filter(b => b.balance !== '0');
-      const hasNonZero = nonZeroBalances.length > 0;
+      // Sort results to prioritize Base USDC
+      const sortedResults = results.sort((a, b) => {
+        // Base USDC first
+        if (a.token.chainId === 8453 && a.token.symbol === 'USDC') return -1;
+        if (b.token.chainId === 8453 && b.token.symbol === 'USDC') return 1;
+        // Then other USDC tokens
+        if (a.token.symbol === 'USDC' && b.token.symbol !== 'USDC') return -1;
+        if (b.token.symbol === 'USDC' && a.token.symbol !== 'USDC') return 1;
+        return 0;
+      });
       
-      if (hasNonZero) {
+      // Filter out zero balances for cleaner display, but always show Base USDC
+      const baseUSDC = sortedResults.find(b => b.token.chainId === 8453 && b.token.symbol === 'USDC');
+      const nonZeroBalances = sortedResults.filter(b => b.balance !== '0');
+      
+      if (baseUSDC) {
+        // Always include Base USDC, even if zero
+        const otherBalances = nonZeroBalances.filter(b => !(b.token.chainId === 8453 && b.token.symbol === 'USDC'));
+        setBalances([baseUSDC, ...otherBalances]);
+      } else if (nonZeroBalances.length > 0) {
         setBalances(nonZeroBalances);
       } else {
-        // Show first USDC token if no balances
-        const firstUSDC = results.find(b => b.token.symbol === 'USDC');
-        setBalances(firstUSDC ? [firstUSDC] : results.slice(0, 1));
+        // Show first token if no balances
+        setBalances(sortedResults.slice(0, 1));
       }
     } catch (error) {
       console.error('Failed to fetch balances:', error);
