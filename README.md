@@ -6,13 +6,16 @@ A fully functional peer-to-peer cryptocurrency payment application built with Re
 
 - **Email-based authentication** using thirdweb user wallets and JWT tokens
 - **Username-based payments** - send to users by @username
+- **Advanced chain & token selection** with persistent user preferences
 - **Multi-chain support** (Ethereum, Polygon, Base) with Base as default
 - **Stablecoin transfers** via thirdweb Payment API (createPayment + completePayment)
+- **Smart balance filtering** by chain and token with "Show All" toggle
 - **Real-time balance display** across multiple chains and tokens
 - **User search and discovery** with Supabase integration
 - **Mobile-first Venmo-inspired UI** based on Figma design
 - **Complete payment flow** from search to confirmation to execution
-- **Transaction history** with real-time updates via Supabase subscriptions
+- **Transaction status monitoring** with blockchain confirmation tracking
+- **Local storage persistence** for user's preferred networks and tokens
 - **Logout functionality** with session management
 
 ## 🛠 Tech Stack
@@ -64,8 +67,8 @@ VITE_DEFAULT_CHAIN_ID=8453
 ### 3. Database Setup
 
 1. Create a new [Supabase](https://supabase.com) project
-2. In the Supabase SQL Editor, run the schema from `supabase-simple-schema.sql`
-3. This creates the `users` and `transactions` tables with permissive RLS policies
+2. In the Supabase SQL Editor, run the schema from `sql/supabase-schema.sql`
+3. This creates the `users` and `transactions` tables with permissive RLS policies for development
 
 ### 4. thirdweb Setup
 
@@ -91,21 +94,24 @@ src/
 │   │   ├── LoginForm.tsx        # Email + code verification
 │   │   └── UsernameSetup.tsx    # Username registration
 │   ├── payments/                # Payment-related components
-│   │   ├── BalanceDisplay.tsx   # Multi-chain wallet balance display
-│   │   ├── SendPayment.tsx      # Payment form with token selection
+│   │   ├── BalanceDisplay.tsx   # Multi-chain wallet balance display with filtering
+│   │   ├── SendPayment.tsx      # Payment form with chain/token selection
 │   │   └── PaymentConfirm.tsx   # Payment review and execution
 │   ├── users/                   # User management
 │   │   └── UserSearch.tsx       # Search users by username
 │   ├── transactions/            # Transaction components
 │   │   └── TransactionHistory.tsx # Transaction list with real-time updates
 │   └── ui/                      # UI components
-│       └── Layout.tsx           # Main app layout with navigation
+│       ├── Layout.tsx           # Main app layout with navigation
+│       └── TokenChainSelector.tsx # Reusable chain/token selection component
 ├── context/
 │   └── AuthContext.tsx          # Authentication state management
+├── hooks/
+│   └── useChainTokenPreference.ts # Chain/token preference management with localStorage
 ├── utils/
 │   ├── thirdwebAPI.ts           # Complete thirdweb API integration
 │   ├── supabase.ts              # Supabase client and database functions
-│   └── contracts.ts             # Token contracts and chain configuration
+│   └── contracts.ts             # Token contracts and chain configuration with metadata
 ├── App.tsx                      # Main app with payment flow state
 └── main.tsx                     # Entry point with error handling
 ```
@@ -128,12 +134,26 @@ src/
 
 ### thirdweb API Integration
 
-The app uses several thirdweb API endpoints:
+The app uses several thirdweb API endpoints for comprehensive Web3 functionality:
 
-- **Authentication**: `/v1/auth/initiate` and `/v1/auth/complete`
-- **Balance**: `/v1/wallets/{address}/balance` for token balances
-- **Payments**: `/v1/payments` for creating and completing payments
-- **Transactions**: `/v1/transactions/{id}` for transaction status
+#### **Authentication & User Management**
+- **`POST /v1/auth/initiate`** - Send email verification code
+- **`POST /v1/auth/complete`** - Verify code and get JWT token + wallet address
+
+#### **Balance & Token Management**
+- **`GET /v1/wallets/{address}/balance`** - Get native and ERC20 token balances
+- **`GET /v1/wallets/{address}/tokens`** - Get all token balances across chains
+- **`GET /v1/wallets/{address}/transactions`** - Get transaction history
+
+#### **Payment System**
+- **`POST /v1/payments`** - Create payment with recipient, token, and amount
+- **`POST /v1/payments/{id}`** - Complete payment with sender wallet address
+- **`GET /v1/payments/{id}`** - Get payment status without completing
+- **Handle Insufficient Funds**: 402 responses include payment links for funding wallets
+
+#### **Transaction Monitoring**
+- **`GET /v1/transactions/{id}`** - Get transaction status and confirmation details
+- **Real-time status tracking** from 'queued' → 'submitted' → 'confirmed'/'failed'
 
 All API calls include proper authentication headers:
 - `x-client-id`: Project identifier
@@ -150,14 +170,43 @@ All API calls include proper authentication headers:
 
 ### Base (Default Chain)
 - USDC: `0x833589fcd6edb6e08f4c7c32d4f71b54bda02913`
+- **Icon**: 🟦
+- **Description**: Ethereum L2 built to bring the next billion users to web3
+- **Block Time**: ~2 seconds
+- **Gas Currency**: ETH
 
 ### Ethereum Mainnet
 - USDC: `0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48`
+- **Icon**: 💎
+- **Description**: The world's programmable blockchain
+- **Block Time**: ~12 seconds
+- **Gas Currency**: ETH
 
 ### Polygon
 - USDC: `0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174`
+- **Icon**: 🟣
+- **Description**: Ethereum scaling solution
+- **Block Time**: ~2 seconds
+- **Gas Currency**: MATIC
 
 The app defaults to Base chain for better user experience and lower gas fees.
+
+## 🔧 Advanced Chain & Token Selection
+
+### **Smart Filtering System**
+- **Chain Selection**: Users can choose specific networks or view all chains
+- **Token Filtering**: Filter balances by specific tokens within selected chains
+- **"Show All" Toggle**: Switch between filtered and comprehensive balance views
+
+### **Persistent User Preferences**
+- **Local Storage**: Remembers user's last selected chain and token
+- **Auto-selection**: Automatically selects preferred networks on app restart
+- **Smart Defaults**: Falls back to Base network if no preference exists
+
+### **Enhanced Balance Display**
+- **Real-time Updates**: Balances refresh when chain/token selection changes
+- **Performance Optimized**: Only fetches balances for selected networks
+- **Visual Indicators**: Clear chain icons and token symbols for easy identification
 
 ## 🔐 Security Features
 
@@ -211,6 +260,14 @@ The app is built with:
 - [x] Performance optimizations
 - [x] Error handling and user feedback
 - [x] Logout functionality
+
+### Phase 5: Advanced Chain & Token Selection ✅
+- [x] Reusable TokenChainSelector component
+- [x] Smart balance filtering by chain and token
+- [x] Persistent user preferences with localStorage
+- [x] Enhanced chain metadata and visual indicators
+- [x] Performance-optimized balance fetching
+- [x] "Show All" toggle for comprehensive balance views
 
 ## 🐛 Common Issues & Solutions
 

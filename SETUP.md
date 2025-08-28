@@ -43,7 +43,7 @@ VITE_BASE_USDC_ADDRESS=0x833589fcd6edb6e08f4c7c32d4f71b54bda02913
 2. Create a new project
 3. Get your project URL and anon key from Settings → API
 4. Add them to your `.env` file
-5. Run the SQL schema from `supabase-schema.sql` in the Supabase SQL editor
+5. Run the SQL schema from `sql/supabase-schema.sql` in the Supabase SQL editor
 
 ## 4. Test the Authentication
 

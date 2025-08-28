@@ -62,7 +62,7 @@ Two main tables in Supabase:
 - **`users`**: email, username, wallet_address, display_name
 - **`transactions`**: payment records with thirdweb integration and status tracking
 
-Run `supabase-simple-schema.sql` to set up the database with permissive RLS policies for development.
+Run `sql/supabase-schema.sql` to set up the database with permissive RLS policies for development.
 
 ### Environment Configuration
 
