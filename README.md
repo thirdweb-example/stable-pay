@@ -287,6 +287,44 @@ The app is built with:
 - **Cause**: Undefined values from API responses
 - **Solution**: Added null checks and fallbacks in formatTokenAmount
 
+## 🤖 Building Your Own with AI Agents
+
+Want to build your own version of StablePay from scratch using AI coding agents? We've included a comprehensive AI development guide!
+
+### 📋 **AI Agent Development Guide**
+
+The [`ai-docs/AGENTS.md`](ai-docs/AGENTS.md) file contains a complete specification for building StablePay from the ground up using AI coding assistants like Claude, ChatGPT, or Cursor's AI.
+
+**What's included:**
+- **📚 Complete Technical Specification**: All features, APIs, and requirements
+- **🔧 Implementation Directives**: Clear instructions instead of rigid code examples
+- **🛠 Tech Stack Guidelines**: React 18, TypeScript, Tailwind CSS, thirdweb, Supabase
+- **🎯 Success Criteria**: Checklist of features to implement
+- **📖 Best Practices**: Performance, security, and UX considerations
+
+### 🚀 **How to Use with AI Agents**
+
+1. **Copy the Guide**: Share the entire `AGENTS.md` content with your AI coding assistant
+2. **Set Up Environment**: Follow the environment configuration directives
+3. **Iterative Development**: Work through the development phases step-by-step
+4. **Reference Resources**: AI can access the [thirdweb API reference](https://api.thirdweb.com/llms.txt) for detailed endpoints
+
+**Example prompt for your AI agent:**
+```
+I want to build a Venmo-style crypto payment app. Please read this complete specification and help me implement it step by step: [paste AGENTS.md content]
+
+Start with Phase 1: Core Infrastructure setup.
+```
+
+### 🎯 **Why Use the AI Guide?**
+- **🧠 Directive-Based**: Focuses on requirements rather than specific implementations
+- **🔄 Flexible**: Works with different AI agents and coding styles  
+- **📖 Comprehensive**: Covers authentication, payments, UI, database, and deployment
+- **⚡ Faster Development**: AI agents can build the entire app following the specification
+- **🛡️ Best Practices**: Includes security, performance, and error handling guidelines
+
+This approach lets you leverage AI to build a production-ready crypto payment application while learning modern web development patterns!
+
 ## 🤝 Contributing
 
 1. Fork the repository
