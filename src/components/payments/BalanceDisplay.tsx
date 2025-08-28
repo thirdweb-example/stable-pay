@@ -105,7 +105,7 @@ const BalanceDisplay: React.FC = () => {
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  }, [user?.wallet_address]);
+  }, [user?.wallet_address, selectedChainId, selectedTokenAddress, showAllChains]);
 
   useEffect(() => {
     fetchBalances();
