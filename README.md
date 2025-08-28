@@ -1,4 +1,4 @@
-# 💰 Crypto Venmo
+# 💰 StablePay
 
 A fully functional peer-to-peer cryptocurrency payment application built with React, thirdweb APIs, and Supabase. Send and receive stablecoins (USDC/USDT) to other users by username with a Venmo-inspired interface.
 
@@ -29,8 +29,8 @@ A fully functional peer-to-peer cryptocurrency payment application built with Re
 ### 1. Clone and Install
 
 ```bash
-git clone https://github.com/eabdelmoneim/crypto-venmo.git
-cd crypto-venmo
+git clone https://github.com/eabdelmoneim/stablepay.git
+cd stablepay
 npm install
 ```
 

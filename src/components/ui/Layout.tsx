@@ -44,7 +44,7 @@ const Layout: React.FC<LayoutProps> = ({ children, currentTab, onTabChange }) =>
             <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center">
               <span className="text-white font-bold text-sm">💰</span>
             </div>
-            <h1 className="text-xl font-bold text-gray-900">Crypto Venmo</h1>
+            <h1 className="text-xl font-bold text-gray-900">StablePay</h1>
           </div>
           
           {user && (

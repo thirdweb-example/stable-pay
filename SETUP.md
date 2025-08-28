@@ -1,4 +1,4 @@
-# 🚀 Quick Setup Guide for Crypto Venmo
+# 🚀 Quick Setup Guide for StablePay
 
 ## ⚠️ Authentication Error Fix
 
