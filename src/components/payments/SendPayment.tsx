@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { ArrowLeft, Send, MessageCircle, DollarSign } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { type User } from '../../utils/supabase';
-import { CHAINS, type TokenContract, parseTokenAmount, formatTokenAmount, CHAIN_IDS, DEFAULT_CHAIN_ID } from '../../utils/contracts';
+import { CHAINS, type TokenContract, parseTokenAmount, formatTokenAmount} from '../../utils/contracts';
 import { getWalletBalance } from '../../utils/thirdwebAPI';
 import TokenChainSelector from '../ui/TokenChainSelector';
 import { useChainTokenPreference } from '../../hooks/useChainTokenPreference';
