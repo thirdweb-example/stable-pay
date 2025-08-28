@@ -1,8 +1,10 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Wallet, RefreshCw, Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { getWalletBalance } from '../../utils/thirdwebAPI';
-import { CHAINS, formatTokenAmount, type TokenContract } from '../../utils/contracts';
+import { CHAINS, formatTokenAmount, type TokenContract, DEFAULT_CHAIN_ID } from '../../utils/contracts';
+import TokenChainSelector from '../ui/TokenChainSelector';
+import { useChainTokenPreference } from '../../hooks/useChainTokenPreference';
 
 interface Balance {
   token: TokenContract;
@@ -17,8 +19,11 @@ const BalanceDisplay: React.FC = () => {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showBalances, setShowBalances] = useState(true);
   const [error, setError] = useState('');
+  const [showAllChains, setShowAllChains] = useState(false);
 
   const { user } = useAuth();
+  const { preference, updateChain, updateToken } = useChainTokenPreference();
+  const { chainId: selectedChainId, tokenAddress: selectedTokenAddress } = preference;
 
   const fetchBalances = useCallback(async (showSpinner = false) => {
     if (!user?.wallet_address) return;
@@ -30,17 +35,20 @@ const BalanceDisplay: React.FC = () => {
     try {
       const balancePromises: Promise<Balance>[] = [];
 
-      // Prioritize Base USDC first, then other tokens
-      const sortedChains = [...CHAINS].sort((a, b) => {
-        // Put Base first
-        if (a.id === 8453) return -1;
-        if (b.id === 8453) return 1;
-        return 0;
-      });
+      // Determine which chains and tokens to fetch
+      let chainsToFetch = CHAINS;
+      if (!showAllChains && selectedChainId) {
+        chainsToFetch = CHAINS.filter(chain => chain.id === selectedChainId);
+      }
 
-      // Fetch balances for all tokens across all chains
-      sortedChains.forEach(chain => {
-        chain.tokens.forEach(token => {
+      // Fetch balances for selected chains and tokens
+      chainsToFetch.forEach(chain => {
+        let tokensToFetch = chain.tokens;
+        if (selectedTokenAddress) {
+          tokensToFetch = chain.tokens.filter(token => token.address === selectedTokenAddress);
+        }
+
+        tokensToFetch.forEach(token => {
           const promise = getWalletBalance(
             user.wallet_address,
             token.chainId,
@@ -71,30 +79,24 @@ const BalanceDisplay: React.FC = () => {
 
       const results = await Promise.all(balancePromises);
       
-      // Sort results to prioritize Base USDC
+      // Sort results by chain and token
       const sortedResults = results.sort((a, b) => {
-        // Base USDC first
-        if (a.token.chainId === 8453 && a.token.symbol === 'USDC') return -1;
-        if (b.token.chainId === 8453 && b.token.symbol === 'USDC') return 1;
-        // Then other USDC tokens
-        if (a.token.symbol === 'USDC' && b.token.symbol !== 'USDC') return -1;
-        if (b.token.symbol === 'USDC' && a.token.symbol !== 'USDC') return 1;
-        return 0;
+        // Sort by chain ID first
+        if (a.token.chainId !== b.token.chainId) {
+          return a.token.chainId - b.token.chainId;
+        }
+        // Then by token symbol
+        return a.token.symbol.localeCompare(b.token.symbol);
       });
       
-      // Filter out zero balances for cleaner display, but always show Base USDC
-      const baseUSDC = sortedResults.find(b => b.token.chainId === 8453 && b.token.symbol === 'USDC');
+      // Filter out zero balances for cleaner display
       const nonZeroBalances = sortedResults.filter(b => b.balance !== '0');
       
-      if (baseUSDC) {
-        // Always include Base USDC, even if zero
-        const otherBalances = nonZeroBalances.filter(b => !(b.token.chainId === 8453 && b.token.symbol === 'USDC'));
-        setBalances([baseUSDC, ...otherBalances]);
-      } else if (nonZeroBalances.length > 0) {
+      if (nonZeroBalances.length > 0) {
         setBalances(nonZeroBalances);
       } else {
-        // Show first token if no balances
-        setBalances(sortedResults.slice(0, 1));
+        // Show all results if no non-zero balances
+        setBalances(sortedResults);
       }
     } catch (error) {
       console.error('Failed to fetch balances:', error);
@@ -116,6 +118,37 @@ const BalanceDisplay: React.FC = () => {
   const toggleVisibility = () => {
     setShowBalances(!showBalances);
   };
+
+  const handleChainSelect = (chainId: number) => {
+    updateChain(chainId);
+  };
+
+  const handleTokenSelect = (token: TokenContract) => {
+    updateToken(token);
+  };
+
+  const toggleShowAllChains = () => {
+    setShowAllChains(!showAllChains);
+    if (!showAllChains) {
+      updateChain(DEFAULT_CHAIN_ID);
+      // Reset token selection by updating with a dummy token
+      const defaultChain = CHAINS.find(c => c.id === DEFAULT_CHAIN_ID);
+      if (defaultChain?.tokens[0]) {
+        updateToken(defaultChain.tokens[0]);
+      }
+    } else {
+      updateChain(DEFAULT_CHAIN_ID);
+    }
+  };
+
+  // Create balance mapping for the selector
+  const balanceMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    balances.forEach(balance => {
+      map[balance.token.address] = balance.formattedBalance;
+    });
+    return map;
+  }, [balances]);
 
   const getTotalUSDValue = () => {
     // For demo purposes, we'll assume 1 USDC/USDT = $1
@@ -180,6 +213,34 @@ const BalanceDisplay: React.FC = () => {
         </div>
       ) : (
         <div className="space-y-4">
+          {/* Chain and Token Selector */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-medium text-gray-700">Filter Balances</h3>
+              <button
+                onClick={toggleShowAllChains}
+                className={`text-sm px-3 py-1 rounded-full transition-colors ${
+                  showAllChains 
+                    ? 'bg-blue-100 text-blue-700' 
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                {showAllChains ? 'Show All' : 'Filter'}
+              </button>
+            </div>
+            
+            {!showAllChains && (
+              <TokenChainSelector
+                selectedChainId={selectedChainId}
+                selectedTokenAddress={selectedTokenAddress}
+                onChainSelect={handleChainSelect}
+                onTokenSelect={handleTokenSelect}
+                balances={balanceMap}
+                showBalances={showBalances}
+              />
+            )}
+          </div>
+
           {/* Total Value */}
           <div>
             <div className="text-3xl font-bold text-gray-900">

@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { ArrowLeft, Send, MessageCircle, DollarSign, ChevronDown } from 'lucide-react';
+import { ArrowLeft, Send, MessageCircle, DollarSign } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { type User } from '../../utils/supabase';
-import { CHAINS, type TokenContract, parseTokenAmount, formatTokenAmount, CHAIN_IDS } from '../../utils/contracts';
+import { CHAINS, type TokenContract, parseTokenAmount, formatTokenAmount, CHAIN_IDS, DEFAULT_CHAIN_ID } from '../../utils/contracts';
 import { getWalletBalance } from '../../utils/thirdwebAPI';
+import TokenChainSelector from '../ui/TokenChainSelector';
+import { useChainTokenPreference } from '../../hooks/useChainTokenPreference';
 
 // Constants moved outside component to prevent recreation
 const QUICK_AMOUNTS = ['1', '5', '10', '20', '50'];
@@ -24,14 +26,16 @@ export interface PaymentData {
 
 const SendPayment: React.FC<SendPaymentProps> = ({ recipient, onBack, onPaymentConfirm }) => {
   const { user } = useAuth();
-  const [selectedToken, setSelectedToken] = useState<TokenContract | null>(null);
   const [amount, setAmount] = useState('');
   const [message, setMessage] = useState('');
-  const [showTokenSelector, setShowTokenSelector] = useState(false);
   const [availableTokens, setAvailableTokens] = useState<TokenContract[]>([]);
   const [balances, setBalances] = useState<Record<string, string>>({});
   const [isLoadingBalances, setIsLoadingBalances] = useState(true);
   const [error, setError] = useState('');
+
+  const { preference, updateChain, updateToken } = useChainTokenPreference();
+  const { chainId: selectedChainId, tokenAddress: selectedTokenAddress } = preference;
+  const [selectedToken, setSelectedToken] = useState<TokenContract | null>(null);
 
   // Load available tokens and balances
   const loadTokensAndBalances = useCallback(async () => {
@@ -42,9 +46,10 @@ const SendPayment: React.FC<SendPaymentProps> = ({ recipient, onBack, onPaymentC
       const balanceMap: Record<string, string> = {};
 
       try {
-        // Get all tokens across all chains
-        for (const chain of CHAINS) {
-          for (const token of chain.tokens) {
+        // Get tokens for the selected chain
+        const selectedChain = CHAINS.find(c => c.id === selectedChainId);
+        if (selectedChain) {
+          for (const token of selectedChain.tokens) {
             tokens.push(token);
             
             try {
@@ -53,11 +58,12 @@ const SendPayment: React.FC<SendPaymentProps> = ({ recipient, onBack, onPaymentC
                 token.chainId,
                 token.address
               );
-              const balanceKey = `${token.chainId}-${token.address}`;
-              balanceMap[balanceKey] = balanceResponse.result.value;
+              // Handle array result from getWalletBalance
+              const balanceData = Array.isArray(balanceResponse.result) ? balanceResponse.result[0] : balanceResponse.result;
+              balanceMap[token.address] = balanceData?.value || '0';
             } catch (error) {
               console.error(`Failed to fetch balance for ${token.symbol}:`, error);
-              balanceMap[`${token.chainId}-${token.address}`] = '0';
+              balanceMap[token.address] = '0';
             }
           }
         }
@@ -65,15 +71,8 @@ const SendPayment: React.FC<SendPaymentProps> = ({ recipient, onBack, onPaymentC
         setAvailableTokens(tokens);
         setBalances(balanceMap);
 
-        // Auto-select Base USDC first, then any USDC, then first token
-        const baseUSDC = tokens.find(t => t.symbol === 'USDC' && t.chainId === CHAIN_IDS.BASE);
-        const firstUSDC = tokens.find(t => t.symbol === 'USDC');
-
-        if (baseUSDC) {
-          setSelectedToken(baseUSDC);
-        } else if (firstUSDC) {
-          setSelectedToken(firstUSDC);
-        } else {
+        // Auto-select first token in the selected chain
+        if (tokens.length > 0) {
           setSelectedToken(tokens[0]);
         }
       } catch (error) {
@@ -82,21 +81,40 @@ const SendPayment: React.FC<SendPaymentProps> = ({ recipient, onBack, onPaymentC
       } finally {
         setIsLoadingBalances(false);
       }
-  }, [user?.wallet_address]);
+  }, [user?.wallet_address, selectedChainId]);
 
   useEffect(() => {
     loadTokensAndBalances();
   }, [loadTokensAndBalances]);
 
+  // Sync selectedToken with preference when tokenAddress changes
+  useEffect(() => {
+    if (selectedTokenAddress && availableTokens.length > 0) {
+      const token = availableTokens.find(t => t.address === selectedTokenAddress);
+      if (token) {
+        setSelectedToken(token);
+      }
+    }
+  }, [selectedTokenAddress, availableTokens]);
+
   const getTokenBalance = useCallback((token: TokenContract): string => {
-    const balanceKey = `${token.chainId}-${token.address}`;
-    return balances[balanceKey] || '0';
+    return balances[token.address] || '0';
   }, [balances]);
 
   const getFormattedBalance = useCallback((token: TokenContract): string => {
     const balance = getTokenBalance(token);
     return formatTokenAmount(balance, token.decimals);
   }, [getTokenBalance]);
+
+  const handleChainSelect = (chainId: number) => {
+    updateChain(chainId);
+    setSelectedToken(null); // Reset token selection when chain changes
+  };
+
+  const handleTokenSelect = (token: TokenContract) => {
+    updateToken(token);
+    setSelectedToken(token);
+  };
 
   const handleAmountChange = useCallback((value: string) => {
     // Only allow numbers and one decimal point
@@ -152,32 +170,9 @@ const SendPayment: React.FC<SendPaymentProps> = ({ recipient, onBack, onPaymentC
 
 
 
-  const handleTokenSelect = useCallback((token: TokenContract) => {
-    setSelectedToken(token);
-    setShowTokenSelector(false);
-    setAmount('');
-    setError('');
-  }, []);
 
-  const toggleTokenSelector = useCallback(() => {
-    setShowTokenSelector(!showTokenSelector);
-  }, [showTokenSelector]);
 
-  // Memoize tokens with their balance information to prevent recalculation
-  const tokensWithBalances = useMemo(() => {
-    return availableTokens.map(token => {
-      const balance = getTokenBalance(token);
-      const formattedBalance = formatTokenAmount(balance, token.decimals);
-      const hasBalance = parseFloat(formattedBalance) > 0;
-      
-      return {
-        ...token,
-        balance,
-        formattedBalance,
-        hasBalance
-      };
-    });
-  }, [availableTokens, getTokenBalance]);
+
 
   // Memoize validation result to prevent calling validateAmount() on every render
   const isAmountValid = useMemo(() => {
@@ -253,71 +248,28 @@ const SendPayment: React.FC<SendPaymentProps> = ({ recipient, onBack, onPaymentC
 
       {/* Payment Form */}
       <div className="venmo-card space-y-6">
-        {/* Token Selection */}
+        {/* Chain and Token Selection */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
-            Currency
+            Network & Currency
           </label>
-          <button
-            onClick={toggleTokenSelector}
-            className="w-full flex items-center justify-between p-4 border border-gray-200 rounded-xl hover:border-blue-500 transition-colors"
-          >
-            {selectedToken ? (
-              <div className="flex items-center space-x-3">
-                <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center">
-                  <span className="text-white font-bold text-xs">
-                    {selectedToken.symbol[0]}
-                  </span>
-                </div>
-                <div className="text-left">
-                  <p className="font-medium text-gray-900">{selectedToken.symbol}</p>
-                  <p className="text-sm text-gray-500">
-                    {selectedTokenInfo?.chainName} • Balance: {selectedTokenInfo?.formattedBalance}
-                  </p>
-                </div>
-              </div>
-            ) : (
-              <p className="text-gray-500">Select currency</p>
-            )}
-            <ChevronDown className="h-5 w-5 text-gray-400" />
-          </button>
-
-          {/* Token Selector Dropdown */}
-          {showTokenSelector && (
-            <div className="mt-2 border border-gray-200 rounded-xl bg-white shadow-lg max-h-60 overflow-y-auto">
-              {tokensWithBalances.map((tokenWithBalance) => {
-                
-                return (
-                  <button
-                    key={`${tokenWithBalance.chainId}-${tokenWithBalance.address}`}
-                    onClick={() => handleTokenSelect(tokenWithBalance)}
-                    className={`w-full flex items-center justify-between p-4 hover:bg-gray-50 transition-colors ${
-                      selectedToken?.address === tokenWithBalance.address && selectedToken?.chainId === tokenWithBalance.chainId
-                        ? 'bg-blue-50'
-                        : ''
-                    }`}
-                  >
-                    <div className="flex items-center space-x-3">
-                      <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center">
-                        <span className="text-white font-bold text-xs">
-                          {tokenWithBalance.symbol[0]}
-                        </span>
-                      </div>
-                      <div className="text-left">
-                        <p className="font-medium text-gray-900">{tokenWithBalance.symbol}</p>
-                        <p className="text-sm text-gray-500">
-                          {CHAINS.find(c => c.id === tokenWithBalance.chainId)?.name} • Balance: {tokenWithBalance.formattedBalance}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm font-medium text-gray-600">
-                        {tokenWithBalance.formattedBalance} {tokenWithBalance.symbol}
-                      </p>
-                    </div>
-                  </button>
-                );
-              })}
+          <TokenChainSelector
+            selectedChainId={selectedChainId}
+            selectedTokenAddress={selectedToken?.address || null}
+            onChainSelect={handleChainSelect}
+            onTokenSelect={handleTokenSelect}
+            balances={balances}
+            showBalances={true}
+          />
+          
+          {selectedToken && (
+            <div className="mt-2 p-3 bg-blue-50 rounded-lg">
+              <p className="text-sm text-blue-700">
+                <span className="font-medium">Selected:</span> {selectedToken.symbol} on {CHAINS.find(c => c.id === selectedToken.chainId)?.name}
+              </p>
+              <p className="text-xs text-blue-600 mt-1">
+                Balance: {selectedTokenInfo?.formattedBalance} {selectedToken.symbol}
+              </p>
             </div>
           )}
         </div>

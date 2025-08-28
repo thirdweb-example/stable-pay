@@ -10,6 +10,10 @@ export interface ChainConfig {
   id: number;
   name: string;
   tokens: TokenContract[];
+  icon?: string;
+  description?: string;
+  blockTime?: number; // Average block time in seconds
+  gasCurrency?: string; // Native token symbol for gas
 }
 
 // Chain IDs
@@ -78,16 +82,28 @@ export const CHAINS: ChainConfig[] = [
     id: CHAIN_IDS.BASE,
     name: 'Base',
     tokens: TOKENS[CHAIN_IDS.BASE],
+    icon: '🟦',
+    description: 'Ethereum L2 built to bring the next billion users to web3',
+    blockTime: 2,
+    gasCurrency: 'ETH',
   },
   {
     id: CHAIN_IDS.ETHEREUM,
     name: 'Ethereum',
     tokens: TOKENS[CHAIN_IDS.ETHEREUM],
+    icon: '💎',
+    description: 'The world\'s programmable blockchain',
+    blockTime: 12,
+    gasCurrency: 'ETH',
   },
   {
     id: CHAIN_IDS.POLYGON,
     name: 'Polygon',
     tokens: TOKENS[CHAIN_IDS.POLYGON],
+    icon: '🟣',
+    description: 'Ethereum scaling solution',
+    blockTime: 2,
+    gasCurrency: 'MATIC',
   },
 ];
 

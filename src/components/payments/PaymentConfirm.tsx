@@ -496,6 +496,15 @@ const PaymentConfirm: React.FC<PaymentConfirmProps> = ({ paymentData, onBack, on
             </div>
           </div>
 
+          {/* Network */}
+          <div className="flex justify-between items-center">
+            <span className="text-gray-600">Network</span>
+            <div className="text-right">
+              <p className="font-medium text-gray-900">{chainName}</p>
+              <p className="text-sm text-gray-500">Chain ID: {selectedToken.chainId}</p>
+            </div>
+          </div>
+
           {/* Message */}
           {message && (
             <div className="flex justify-between items-start">
