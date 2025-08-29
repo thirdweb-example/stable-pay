@@ -360,7 +360,7 @@ export const getPaymentStatus = async (
     }
   });
 
-  console.log('Get payment status response:', response.status);
+  console.log('Get payment status response:', response);
   
   if (!response.ok) {
     const errorText = await response.text();

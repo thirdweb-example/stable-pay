@@ -217,6 +217,10 @@ const PaymentConfirm: React.FC<PaymentConfirmProps> = ({ paymentData, onBack, on
     const monitoringInterval = setInterval(async () => {
       try {
         const paymentStatus = await getPaymentStatus(currentPaymentId, token);
+
+        console.log('Payment status:', paymentStatus);
+        console.log('Payment data:', paymentStatus.data[0]);
+      //  console.log('Payment status:', paymentStatus.data[0].status);
         
         if (paymentStatus.data && paymentStatus.data.length > 0) {
           const payment = paymentStatus.data[0];
