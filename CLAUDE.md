@@ -114,3 +114,30 @@ The UI is built mobile-first with:
 - Touch-friendly interfaces and button sizes
 - Responsive layouts that scale to desktop
 - Custom CSS classes following `venmo-card` pattern for consistent styling
+
+## Development Workflow
+
+### Testing and Quality Assurance
+
+After making changes, always run:
+```bash
+npm run lint    # Check for linting issues
+npm run build   # Ensure production build succeeds
+```
+
+### Important Development Guidelines
+
+- **NEVER create files unless absolutely necessary** for achieving your goal
+- **ALWAYS prefer editing existing files** to creating new ones
+- **NEVER proactively create documentation files** (*.md) or README files unless explicitly requested
+- Authentication flow must be tested with real thirdweb credentials
+- All environment variables must be properly configured before testing payments
+- Use `sql/supabase-schema.sql` for fresh database setup
+
+### AI Development Resources
+
+The project includes `AGENTS.md` - a comprehensive specification for building this app from scratch using AI coding assistants. This file contains:
+- Complete technical specifications for all features
+- Implementation directives for AI agents
+- Step-by-step development phases
+- Integration guidelines for thirdweb and Supabase APIs

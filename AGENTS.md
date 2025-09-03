@@ -112,7 +112,7 @@ The app uses several thirdweb API v1 endpoints organized by functionality:
    - Use loading states and skeleton screens during data fetching
    - Handle rate limiting and implement retry logic with exponential backoff
 
-#### 💳 Payment System (Recommended Approach)
+#### 💳 Peer to Peer Payment System (Recommended Approach)
 
 **Endpoints**: `POST /v1/payments`, `POST /v1/payments/{id}`, `GET /v1/payments/{id}`
 
