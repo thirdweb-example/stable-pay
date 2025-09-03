@@ -1,4 +1,4 @@
-# 💰 StablePay
+# 💰 StablePay - Peer to Peer Stablecoin Payments using thirdweb
 
 A fully functional peer-to-peer cryptocurrency payment application built with React, thirdweb APIs, and Supabase. Send and receive stablecoins (USDC/USDT) to other users by username with a Venmo-inspired interface.
 
