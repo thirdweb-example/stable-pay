@@ -21,14 +21,16 @@ const AppContent: React.FC = () => {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-white flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-16 h-16 bg-blue-500 rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg">
-            <div className="w-8 h-8 border-3 border-white border-t-transparent rounded-full animate-spin"></div>
+      <Layout currentTab="home" onTabChange={() => {}}>
+        <div className="min-h-screen bg-gradient-to-br from-blue-50 to-white flex items-center justify-center">
+          <div className="text-center">
+            <div className="w-16 h-16 bg-blue-500 rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg">
+              <div className="w-8 h-8 border-3 border-white border-t-transparent rounded-full animate-spin"></div>
+            </div>
+            <p className="text-gray-600">Loading...</p>
           </div>
-          <p className="text-gray-600">Loading...</p>
         </div>
-      </div>
+      </Layout>
     );
   }
 

@@ -85,14 +85,14 @@ const Layout: React.FC<LayoutProps> = ({ children, currentTab, onTabChange }) =>
         </div>
       </header>
 
-      {/* Main Content */}
-      <main className="flex-1 overflow-auto">
+      {/* Main Content - with bottom padding to account for fixed navigation */}
+      <main className="flex-1 overflow-auto pb-20">
         {children}
       </main>
 
-      {/* Bottom Navigation */}
-      <nav className="bg-white border-t border-gray-200 px-2 py-2">
-        <div className="flex items-center justify-around">
+      {/* Fixed Bottom Navigation - Always visible and locked */}
+      <nav className="nav-locked bg-white border-t border-gray-200 px-2 py-2 shadow-lg safe-area-inset-bottom">
+        <div className="flex items-center justify-around max-w-md mx-auto">
           {tabs.map((tab) => {
             const Icon = tab.icon;
             const isActive = currentTab === tab.id;
@@ -101,14 +101,15 @@ const Layout: React.FC<LayoutProps> = ({ children, currentTab, onTabChange }) =>
               <button
                 key={tab.id}
                 onClick={() => onTabChange(tab.id)}
-                className={`flex flex-col items-center justify-center px-3 py-2 rounded-lg transition-colors ${
+                className={`flex flex-col items-center justify-center px-2 py-2 rounded-lg transition-colors min-w-0 flex-1 ${
                   isActive
                     ? 'text-blue-500 bg-blue-50'
                     : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
                 }`}
+                aria-label={`Navigate to ${tab.label}`}
               >
                 <Icon className={`h-5 w-5 ${isActive ? 'text-blue-500' : ''}`} />
-                <span className={`text-xs mt-1 font-medium ${isActive ? 'text-blue-500' : ''}`}>
+                <span className={`text-xs mt-1 font-medium truncate ${isActive ? 'text-blue-500' : ''}`}>
                   {tab.label}
                 </span>
               </button>
