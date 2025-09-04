@@ -211,10 +211,6 @@ const LoginForm: React.FC = () => {
             <a href="https://thirdweb.com" className="text-blue-500 hover:underline">
               thirdweb
             </a>
-            {' & '}
-            <a href="https://supabase.com" className="text-blue-500 hover:underline">
-              Supabase
-            </a>
           </p>
         </div>
       </div>
