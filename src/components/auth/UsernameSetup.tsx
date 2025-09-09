@@ -62,8 +62,9 @@ const UsernameSetup: React.FC = () => {
 
       updateUser(updatedUser);
       await refreshUser();
-    } catch (error: any) {
-      if (error.message.includes('duplicate key value')) {
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      if (errorMessage.includes('duplicate key value')) {
         setError('This username is already taken. Please choose another.');
       } else {
         setError('Failed to set username. Please try again.');
